@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ultrathink-engine
+  namespace: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ultrathink
+  template:
+    metadata:
+      labels:
+        app: ultrathink
+    spec:
+      nodeSelector:
+        nvidia.com/gpu: "true"
+      containers:
+      - name: fractal-engine
+        image: ghcr.io/damianwnorowski/ultrathink-engine:latest
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+          requests:
+            cpu: "8"
+            memory: 16Gi
+        env:
+        - name: CHAOS_MODE
+          value: "true"
+        - name: SELF_RE
+          value: "enabled"
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: weights
+          mountPath: /weights
+      volumes:
+      - name: weights
+        persistentVolumeClaim:
+          claimName: ultrathink-weights
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ultrathink-weights
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ultrathink
+spec:
+  selector:
+    app: ultrathink
+  ports:
+  - port: 80
+    targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ultrathink-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  rules:
+  - host: ultrathink.damianwnorowski.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ultrathink
+            port:
+              number: 80
